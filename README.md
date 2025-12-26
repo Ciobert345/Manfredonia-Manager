@@ -1,16 +1,15 @@
-# manfredonia_updater
+# Manfredonia Updater v1.0.0 (Light Edition)
 
-A new Flutter project.
+Un updater manuale, leggero e affidabile per il Manfredonia Minecraft Modpack.
 
-## Getting Started
+## Caratteristiche
+- **Semplice e Diretto**: Nessun processo in background o avvio automatico.
+- **Veloce**: Carica istantaneamente l'ultimo pacchetto usato.
+- **Notifiche**: Ti avvisa se c'è un aggiornamento non appena apri l'app.
+- **Design Moderno**: Interfaccia pulita e centrata sullo schermo principale.
 
-This project is a starting point for a Flutter application.
+## Installazione
+Scarica l'ultimo installer `msix` dalla sezione Releases o utilizza il file fornito direttamente.
 
-A few resources to get you started if this is your first Flutter project:
-
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+---
+Sviluppato con Flutter per il Manfredonia Project.
