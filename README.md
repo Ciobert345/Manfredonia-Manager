@@ -1,15 +1,23 @@
-# Manfredonia Updater v1.0.0 (Light Edition)
+# Manfredonia Manager v1.0.0
 
-Un updater manuale, leggero e affidabile per il Manfredonia Minecraft Modpack.
+Il gestore definitivo, leggero e affidabile per il Manfredonia Minecraft Modpack. 
 
-## Caratteristiche
-- **Semplice e Diretto**: Nessun processo in background o avvio automatico.
-- **Veloce**: Carica istantaneamente l'ultimo pacchetto usato.
-- **Notifiche**: Ti avvisa se c'è un aggiornamento non appena apri l'app.
-- **Design Moderno**: Interfaccia pulita e centrata sullo schermo principale.
+Precedentemente noto come *Manfredonia Updater*, questa nuova versione si evolve in un vero e proprio **Manager** per gestire le tue installazioni in modo intelligente.
 
-## Installazione
-Scarica l'ultimo installer `msix` dalla sezione Releases o utilizza il file fornito direttamente.
+## 🚀 Caratteristiche Principali
+- **Supporto Multi-Launcher**: Rileva e gestisce automaticamente istanze su **CurseForge**, **Modrinth** e **SKLauncher**.
+- **Mod Preservation (Shield)**: L'esclusivo sistema di "Scudo" che ti permette di selezionare le tue mod personali (.jar) per proteggerle durante gli aggiornamenti del pack.
+- **Rilevamento Intelligente**: Distingue accuratamente tra la versione di Minecraft e il Loader Fabric per evitare conflitti e installazioni errate.
+- **Performance Ottimizzate**: Animazioni fluide e caricamento istantaneo senza processi pesanti in background.
+- **Design Moderno**: Interfaccia premium in stile dark-mode, pulita e reattiva.
+
+## 📦 Installazione
+1. Scarica l'ultimo file `.msix` dalla sezione [Releases](https://github.com/Ciobert345/Manfredonia-Updater/releases).
+2. Eseguilo per installare l'app su Windows.
+3. Seleziona il tuo launcher e l'istanza che vuoi gestire.
+
+## 🛡️ Mod Preservation
+Attivando il sistema di protezione nelle opzioni avanzate, potrai scegliere quali file `.jar` presenti nella cartella `mods` non devono essere toccati dall'updater. Ideale per chi ama aggiungere mod di utility personali senza perderle a ogni aggiornamento del server.
 
 ---
-Sviluppato con Flutter per il Manfredonia Project.
+Sviluppato con Flutter per il **Manfredonia Project**.
