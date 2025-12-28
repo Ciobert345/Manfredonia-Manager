@@ -1,8 +1,9 @@
 # Manfredonia Manager v1.0.0
 
-Il gestore definitivo, leggero e affidabile per il Manfredonia Minecraft Modpack. 
+<img width="2523" height="1730" alt="immagine" src="https://github.com/user-attachments/assets/5e49c3f6-091d-419c-986e-d9084c0f1119" />
 
-Precedentemente noto come *Manfredonia Updater*, questa nuova versione si evolve in un vero e proprio **Manager** per gestire le tue installazioni in modo intelligente.
+
+Il gestore definitivo, leggero e affidabile per il Manfredonia Minecraft Modpack. 
 
 ## 🚀 Caratteristiche Principali
 - **Supporto Multi-Launcher**: Rileva e gestisce automaticamente istanze su **CurseForge**, **Modrinth** e **SKLauncher**.
