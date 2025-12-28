@@ -434,7 +434,7 @@ class LauncherService {
       // Create a dummy modlist.html (sometimes required)
       final modlistFile = File(p.join(instancePath, 'modlist.html'));
       if (!await modlistFile.exists()) {
-        await modlistFile.writeAsString("<ul><li>Manfredonia Pack Mods</li></ul>");
+        await modlistFile.writeAsString("<ul><li>Manfredonia Modpack Mods</li></ul>");
       }
 
       final cfFile = File(p.join(instancePath, 'minecraftinstance.json'));

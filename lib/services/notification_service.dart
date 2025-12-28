@@ -15,7 +15,7 @@ class NotificationService {
   Future<void> showUpdateNotification(String version) async {
     final notification = LocalNotification(
       title: "Aggiornamento disponibile",
-      body: "Nuova versione v$version per il Manfredonia Pack.",
+      body: "Nuova versione v$version per il Mod Pack.",
       actions: [
         LocalNotificationAction(text: "Apri Manager"),
       ],
