@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:path/path.dart' as p;
+import 'settings_service.dart';
 
 class LauncherService {
   Map<String, String> getLauncherPaths() {
@@ -14,13 +15,47 @@ class LauncherService {
       cfPath = p.join(userProfile, 'Documents', 'CurseForge', 'Minecraft', 'Instances');
     }
 
-    return {
+    final paths = {
       'curseforge': cfPath,
       'modrinth': p.join(appData, 'ModrinthApp', 'profiles'),
       'modrinth_alt': p.join(appData, 'com.modrinth.launcher', 'meta', 'instances'),
       'sklauncher': p.join(appData, '.minecraft', 'modpacks'),
       'sklauncher_alt': p.join(appData, '.sklauncher', 'instances'),
     };
+
+    return paths;
+  }
+
+  bool isValidInstance(String path) {
+    final dir = Directory(path);
+    if (!dir.existsSync()) return false;
+
+    // Check for common instance configuration files
+    final indicators = [
+      'manifest.json',
+      'minecraftinstance.json',
+      'instance.json',
+      'mmc-pack.json',
+      'modpack.json',
+      'version.txt',
+      'options.txt',
+      'servers.dat'
+    ];
+
+    for (var file in indicators) {
+      if (File(p.join(path, file)).existsSync()) return true;
+    }
+
+    // Check for mods folder
+    if (Directory(p.join(path, 'mods')).existsSync()) return true;
+
+    // Check for minecraft folder (Vanilla/some launchers)
+    if (Directory(p.join(path, 'minecraft')).existsSync()) return true;
+    
+    // Check for dot-minecraft folder (Legacy/Vanilla)
+    if (Directory(p.join(path, '.minecraft')).existsSync()) return true;
+
+    return false;
   }
 
   List<String> scanInstances(String launcherPath) {

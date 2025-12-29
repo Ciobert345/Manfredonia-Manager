@@ -28,6 +28,22 @@ class NotificationService {
     await notification.show();
   }
 
+  Future<void> showManagerUpdateNotification(String version) async {
+    final notification = LocalNotification(
+      title: "Aggiornamento disponibile",
+      body: "Nuova versione $version del Manager disponibile. Apri il Manager per aggiornare.",
+      actions: [
+        LocalNotificationAction(text: "Apri Manager"),
+      ],
+    );
+
+    notification.onClick = () {
+      _showWindow();
+    };
+
+    await notification.show();
+  }
+
   Future<void> showUpToDateNotification() async {
     final notification = LocalNotification(
       title: "Manfredonia Manager",

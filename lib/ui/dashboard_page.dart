@@ -8,11 +8,13 @@ import 'package:path_provider/path_provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:file_picker/file_picker.dart';
 import '../services/github_service.dart';
 import '../services/launcher_service.dart';
 import '../services/update_service.dart';
 import '../services/notification_service.dart';
 import '../services/settings_service.dart';
+import '../services/manager_update_service.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -25,6 +27,7 @@ class _DashboardPageState extends State<DashboardPage> with WidgetsBindingObserv
   final LauncherService _launcherService = LauncherService();
   final GithubService _githubService = GithubService();
   final UpdateService _updateService = UpdateService();
+  final ManagerUpdateService _managerUpdateService = ManagerUpdateService();
 
   late Map<String, String> _launchers;
   List<String> _instances = [];
@@ -34,6 +37,8 @@ class _DashboardPageState extends State<DashboardPage> with WidgetsBindingObserv
   String _remoteVersion = 'v?.?.?';
   GithubRelease? _latestRelease;
   String? _lastNotifiedTag;
+  String? _lastNotifiedManagerTag;
+  String? _lastPromptedManagerTag;
   String? _placeholderInstance;
 
   double _progress = 0.0;
@@ -62,6 +67,7 @@ class _DashboardPageState extends State<DashboardPage> with WidgetsBindingObserv
     // Simply load the last session on startup
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadLastSession();
+      _checkManagerUpdate();
     });
   }
 
@@ -76,6 +82,7 @@ class _DashboardPageState extends State<DashboardPage> with WidgetsBindingObserv
     if (state == AppLifecycleState.resumed) {
       print("[Dashboard] Window focused, refreshing instances...");
       _refreshInstances();
+      _checkManagerUpdate();
     }
   }
 
@@ -88,6 +95,104 @@ class _DashboardPageState extends State<DashboardPage> with WidgetsBindingObserv
       if (settings.lastInstance != null && _instances.contains(settings.lastInstance)) {
         await _onInstanceChanged(settings.lastInstance);
       }
+    }
+  }
+
+  Future<void> _checkManagerUpdate() async {
+    if (!Platform.isWindows) return;
+
+    try {
+      final release = await _managerUpdateService.checkForUpdate();
+      if (release == null) return;
+
+      if (_lastNotifiedManagerTag != release.tag) {
+        await NotificationService().showManagerUpdateNotification(release.tag);
+        _lastNotifiedManagerTag = release.tag;
+      }
+
+      if (!mounted) return;
+      if (_lastPromptedManagerTag == release.tag) return;
+      _lastPromptedManagerTag = release.tag;
+
+      await _promptManagerUpdate(release);
+    } catch (e) {
+      print('[ManagerUpdate] Error checking update: $e');
+    }
+  }
+
+  Future<void> _promptManagerUpdate(ManagerGithubRelease release) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1e293b),
+        title: const Text('Aggiornamento Manager', style: TextStyle(color: Colors.white)),
+        content: Text(
+          'È disponibile una nuova versione del Manager (${release.tag}). Vuoi aggiornare adesso?',
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('PIÙ TARDI', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF3b82f6)),
+            child: const Text('AGGIORNA'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == true && mounted) {
+      await _runManagerUpdate(release);
+    }
+  }
+
+  Future<void> _runManagerUpdate(ManagerGithubRelease release) async {
+    final progress = ValueNotifier<double>(0.0);
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF1e293b),
+          title: const Text('Download aggiornamento', style: TextStyle(color: Colors.white)),
+          content: ValueListenableBuilder<double>(
+            valueListenable: progress,
+            builder: (context, p, _) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Sto scaricando l\'aggiornamento…', style: TextStyle(color: Colors.white70)),
+                  const SizedBox(height: 16),
+                  LinearProgressIndicator(value: p > 0 ? p : null),
+                  const SizedBox(height: 10),
+                  Text('${(p * 100).clamp(0, 100).toStringAsFixed(0)}%', style: const TextStyle(color: Colors.white54)),
+                ],
+              );
+            },
+          ),
+        );
+      },
+    );
+
+    try {
+      await _managerUpdateService.downloadAndRunInstaller(
+        release,
+        onProgress: (p) {
+          progress.value = p;
+        },
+      );
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        _showNotification('Errore aggiornamento Manager: $e', NotificationType.error);
+      }
+    } finally {
+      progress.dispose();
     }
   }
 
@@ -124,6 +229,12 @@ class _DashboardPageState extends State<DashboardPage> with WidgetsBindingObserv
     } else if (_launchers.containsKey(value)) {
       combinedInstances.addAll(_launcherService.scanInstances(_launchers[value]!));
     }
+
+    // Add custom instances regardless of launcher
+    final customPaths = SettingsService().customPaths;
+    for (final path in customPaths) {
+      combinedInstances.add(p.basename(path));
+    }
     
     final newList = combinedInstances.toSet().toList();
     
@@ -138,6 +249,7 @@ class _DashboardPageState extends State<DashboardPage> with WidgetsBindingObserv
       }
     }
 
+    // Remove __ADD_CUSTOM__ as it is now handled by a button
     newList.add("__NEW_INSTALL__");
 
     if (!listEquals(_instances, newList)) {
@@ -252,6 +364,86 @@ class _DashboardPageState extends State<DashboardPage> with WidgetsBindingObserv
         _instances.insert(0, name!);
       });
       await _startUpdate(isNewInstall: true);
+    }
+  }
+
+  Future<void> _addCustomPath() async {
+    try {
+      final String? selectedDirectory = await FilePicker.platform.getDirectoryPath(
+        dialogTitle: 'Seleziona Cartella Istanza',
+        lockParentWindow: true,
+      );
+
+      if (selectedDirectory != null) {
+        // Validate the selected directory
+        if (!_launcherService.isValidInstance(selectedDirectory)) {
+          if (mounted) {
+            showDialog(
+              context: context,
+              builder: (context) => AlertDialog(
+                backgroundColor: const Color(0xFF0f172a),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                  side: const BorderSide(color: Colors.redAccent, width: 1),
+                ),
+                title: const Row(
+                  children: [
+                    Icon(Icons.warning_amber_rounded, color: Colors.redAccent),
+                    SizedBox(width: 12),
+                    Text('Istanza Non Valida', style: TextStyle(color: Colors.white)),
+                  ],
+                ),
+                content: const Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "ERRORE SELEZIONE",
+                      style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w900, fontSize: 14),
+                    ),
+                    SizedBox(height: 12),
+                    Text(
+                      'La cartella selezionata non sembra essere un\'istanza di Minecraft valida.\n\n'
+                      'Assicurati che la cartella contenga una sottocartella "mods", "minecraft" o un file di configurazione (manifest.json, instance.cfg, ecc.).',
+                      style: TextStyle(color: Colors.white70, fontSize: 13),
+                    ),
+                  ],
+                ),
+                actions: [
+                  ElevatedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.redAccent.withOpacity(0.2),
+                      foregroundColor: Colors.redAccent,
+                      side: const BorderSide(color: Colors.redAccent),
+                    ),
+                    child: const Text('HO CAPITO'),
+                  ),
+                ],
+              ),
+            );
+          }
+          return;
+        }
+
+        final settings = SettingsService();
+        final instanceName = p.basename(selectedDirectory);
+
+        settings.addCustomPath(selectedDirectory);
+        
+        await _refreshInstances();
+        
+        if (_instances.contains(instanceName)) {
+             await _onInstanceChanged(instanceName);
+        }
+      }
+    } catch (e) {
+      print('Error picking directory: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Errore selezione cartella: $e')),
+        );
+      }
     }
   }
 
@@ -380,6 +572,13 @@ class _DashboardPageState extends State<DashboardPage> with WidgetsBindingObserv
     final l = launcher ?? _selectedLauncher;
     final i = instance ?? _selectedInstance;
     if (l == null || i == null) return null;
+
+    // Check custom paths first
+    for (final path in SettingsService().customPaths) {
+      if (p.basename(path) == i) {
+        return path;
+      }
+    }
     
     String? basePath;
     if (l == 'sklauncher') {
@@ -847,7 +1046,7 @@ class _DashboardPageState extends State<DashboardPage> with WidgetsBindingObserv
                                   borderRadius: BorderRadius.circular(20),
                                   border: Border.all(color: Colors.white.withOpacity(0.1)),
                                 ),
-                                child: const Text('v1.0.0', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFBFDBFE))),
+                                child: const Text('v1.0.2', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFBFDBFE))),
                               ),
                               const SizedBox(width: 8),
                               IconButton(
@@ -875,10 +1074,10 @@ class _DashboardPageState extends State<DashboardPage> with WidgetsBindingObserv
                               icon: Icons.rocket_launch,
                               value: _selectedLauncher,
                               hint: 'Choose a launcher platform...',
-                              items: const [
-                                DropdownMenuItem(value: 'curseforge', child: Text('CurseForge')),
-                                DropdownMenuItem(value: 'modrinth', child: Text('Modrinth')),
-                                DropdownMenuItem(value: 'sklauncher', child: Text('SKLauncher')),
+                              items: [
+                                const DropdownMenuItem(value: 'curseforge', child: Text('CurseForge')),
+                                const DropdownMenuItem(value: 'modrinth', child: Text('Modrinth')),
+                                const DropdownMenuItem(value: 'sklauncher', child: Text('SKLauncher')),
                               ],
                               onChanged: _onLauncherChanged,
                             ),
@@ -886,21 +1085,42 @@ class _DashboardPageState extends State<DashboardPage> with WidgetsBindingObserv
                             
                             _buildLabel('Target Instance', opacity: _selectedLauncher == null ? 0.4 : 0.7),
                             const SizedBox(height: 8),
-                            _buildDropdown(
-                              icon: Icons.folder,
-                              value: _selectedInstance,
-                              hint: _selectedLauncher == null ? 'Waiting for launcher...' : 'Select an instance...',
-                              enabled: _selectedLauncher != null,
-                              items: _instances.map((i) {
-                                if (i == "__NEW_INSTALL__") {
-                                  return const DropdownMenuItem(
-                                    value: "__NEW_INSTALL__",
-                                    child: Text("+ Install as NEW", style: TextStyle(color: Color(0xFF3b82f6), fontWeight: FontWeight.bold)),
-                                  );
-                                }
-                                return DropdownMenuItem(value: i, child: Text(i));
-                              }).whereType<DropdownMenuItem<String>>().toList(),
-                              onChanged: _onInstanceChanged,
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _buildDropdown(
+                                    icon: Icons.folder,
+                                    value: _selectedInstance,
+                                    hint: _selectedLauncher == null ? 'Waiting for launcher...' : 'Select an instance...',
+                                    enabled: _selectedLauncher != null,
+                                    items: _instances.map((i) {
+                                      if (i == "__NEW_INSTALL__") {
+                                        return const DropdownMenuItem(
+                                          value: "__NEW_INSTALL__",
+                                          child: Text("+ Install as NEW", style: TextStyle(color: Color(0xFF3b82f6), fontWeight: FontWeight.bold)),
+                                        );
+                                      }
+                                      return DropdownMenuItem(value: i, child: Text(i));
+                                    }).whereType<DropdownMenuItem<String>>().toList(),
+                                    onChanged: _onInstanceChanged,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Container(
+                                  height: 48,
+                                  width: 48,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.05),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: Colors.white.withOpacity(0.1)),
+                                  ),
+                                  child: IconButton(
+                                    icon: const Icon(Icons.create_new_folder_outlined, color: Color(0xFF4ade80)),
+                                    tooltip: 'Add Custom Instance',
+                                    onPressed: _addCustomPath,
+                                  ),
+                                ),
+                              ],
                             ),
                             const SizedBox(height: 20),
     

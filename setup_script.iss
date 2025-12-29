@@ -3,15 +3,15 @@
 ; (To generate a new GUID, click Tools | Generate GUID inside the IDE.)
 AppId={{C7A9E8D1-2B3A-4C5D-6E7F-8G9H0I1J2K3L}
 AppName=Manfredonia Manager
-AppVersion=1.0.0
+AppVersion=1.0.2
 AppPublisher=Robert Ciobanu
 DefaultDirName={autopf}\Manfredonia Manager
 DisableProgramGroupPage=yes
 ; Remove the following line to run in administrative install mode (install for all users.)
 PrivilegesRequired=lowest
 OutputDir=installer
-OutputBaseFilename=Manfredonia Manager
-SetupIconFile=c:\Users\rober\Documents\Manfredonia updater\manfredonia_updater\assets\app_logo_final.ico
+OutputBaseFilename=Manfredonia Manager setup
+SetupIconFile=C:\Users\rober\Documents\Manfredonia Manager\manfredonia_updater\assets\app_logo_final.ico
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern

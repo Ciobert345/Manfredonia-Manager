@@ -10,6 +10,7 @@ class SettingsService {
 
   String? lastLauncher;
   String? lastInstance;
+  List<String> customPaths = [];
 
   Future<void> init() async {
     await loadSettings();
@@ -28,6 +29,9 @@ class SettingsService {
         final data = json.decode(content);
         lastLauncher = data['lastLauncher'];
         lastInstance = data['lastInstance'];
+        if (data['customPaths'] != null) {
+          customPaths = List<String>.from(data['customPaths']);
+        }
       }
     } catch (e) {
       print("[Settings] Error loading settings: $e");
@@ -40,10 +44,25 @@ class SettingsService {
       final data = {
         'lastLauncher': lastLauncher,
         'lastInstance': lastInstance,
+        'customPaths': customPaths,
       };
       await file.writeAsString(json.encode(data));
     } catch (e) {
       print("[Settings] Error saving settings: $e");
+    }
+  }
+
+  void addCustomPath(String path) {
+    if (!customPaths.contains(path)) {
+      customPaths.add(path);
+      saveSettings();
+    }
+  }
+
+  void removeCustomPath(String path) {
+    if (customPaths.contains(path)) {
+      customPaths.remove(path);
+      saveSettings();
     }
   }
 }

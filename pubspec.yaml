@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.0
+version: 1.0.2+1
 
 environment:
   sdk: ^3.10.4
@@ -44,6 +44,7 @@ dependencies:
   flutter_animate: ^4.5.2
   local_notifier: ^0.1.6
   package_info_plus: ^8.1.2
+  file_picker: ^10.3.8
 
 dev_dependencies:
   flutter_test:
@@ -72,7 +73,7 @@ msix_config:
   certificate_path: cert.pfx
   certificate_password: 123456
   identity_name: com.manfredonia.manager
-  msix_version: 1.0.0.0
+  msix_version: 1.0.1.0
   logo_path: assets/app_logo_final.png
   capabilities: internetClient, location, registryRead, registryWrite
   install_certificate: true
