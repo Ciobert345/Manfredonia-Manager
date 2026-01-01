@@ -1,8 +1,14 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:archive/archive.dart';
 import 'package:path/path.dart' as p;
+
+// Top-level function for compute
+Archive _decodeZip(List<int> bytes) {
+  return ZipDecoder().decodeBytes(bytes);
+}
 
 class UpdateService {
   Future<void> updatePack(
@@ -17,46 +23,63 @@ class UpdateService {
 
     final totalSize = response.contentLength ?? 0;
     int downloadedSize = 0;
-    List<int> bytes = [];
+    final buffer = BytesBuilder(copy: false);
 
     await for (var chunk in response.stream) {
-      bytes.addAll(chunk);
+      buffer.add(chunk);
       downloadedSize += chunk.length;
       if (totalSize > 0) {
         onProgress((downloadedSize / totalSize) * 0.5, 'downloading'); 
       }
     }
 
-    // Cleanup folders
-    onProgress(0.55, 'cleaning');
-    
-    // Selective cleanup for mods
-    final modsDir = Directory(p.join(instancePath, 'mods'));
-    if (await modsDir.exists()) {
-      final entries = await modsDir.list().toList();
-      for (var entry in entries) {
-        if (entry is File) {
-          final fileName = p.basename(entry.path);
-          if (!preservedFiles.contains(fileName)) {
-            await entry.delete();
-          }
-        } else if (entry is Directory) {
-          await entry.delete(recursive: true);
+    final bytes = buffer.takeBytes();
+
+    // Decode in a separate isolate to avoid UI freeze
+    onProgress(0.55, 'analyzing');
+    final archive = await compute(_decodeZip, bytes);
+
+    // Identify top-level folders in the archive
+    final foldersInArchive = <String>{};
+    for (var file in archive) {
+      final name = file.name.replaceAll('\\', '/');
+      final parts = name.split('/');
+      if (parts.isNotEmpty) {
+        final top = parts.first;
+        if (parts.length > 1 || !file.isFile) {
+           if (top.isNotEmpty) foldersInArchive.add(top);
         }
       }
     }
 
-    final otherFolders = ['config', 'scripts', 'kubejs', 'defaultconfigs'];
-    for (var folder in otherFolders) {
+    // Cleanup folders
+    onProgress(0.58, 'cleaning');
+    
+    for (var folder in foldersInArchive) {
       final dir = Directory(p.join(instancePath, folder));
-      if (await dir.exists()) {
+      if (!await dir.exists()) continue;
+
+      if (folder == 'mods') {
+        // Selective cleanup for mods
+        final entries = await dir.list().toList();
+        for (var entry in entries) {
+          if (entry is File) {
+            final fileName = p.basename(entry.path);
+            if (!preservedFiles.contains(fileName)) {
+              await entry.delete();
+            }
+          } else if (entry is Directory) {
+            await entry.delete(recursive: true);
+          }
+        }
+      } else {
+        // Full delete for other folders (REPLACE behavior)
         await dir.delete(recursive: true);
       }
     }
 
     // Extract
     onProgress(0.60, 'extracting');
-    final archive = ZipDecoder().decodeBytes(bytes);
     final totalFiles = archive.length;
     int extractedFiles = 0;
 

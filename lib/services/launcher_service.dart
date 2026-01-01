@@ -7,21 +7,56 @@ class LauncherService {
   Map<String, String> getLauncherPaths() {
     final userProfile = Platform.environment['USERPROFILE'] ?? '';
     final appData = Platform.environment['APPDATA'] ?? '';
+    final localAppData = Platform.environment['LOCALAPPDATA'] ?? '';
 
-    // Check for the specific CurseForge path provided by the user
-    String cfPath = p.join(userProfile, 'curseforge', 'minecraft', 'Instances');
-    if (!Directory(cfPath).existsSync()) {
-      // Fallback to standard path
-      cfPath = p.join(userProfile, 'Documents', 'CurseForge', 'Minecraft', 'Instances');
+    // Helper to find first existing path from candidates
+    String findPath(List<String> candidates) {
+      for (var path in candidates) {
+        if (Directory(path).existsSync()) {
+          print("[LauncherService] Found path: $path");
+          return path;
+        }
+      }
+      return ""; // Return empty if none found
     }
 
+    final curseForgePaths = [
+      p.join(userProfile, 'curseforge', 'minecraft', 'Instances'), // Standalone Default
+      p.join(userProfile, 'Documents', 'CurseForge', 'Minecraft', 'Instances'), // Overwolf Default
+      'C:\\CurseForge\\Minecraft\\Instances',
+      'D:\\CurseForge\\Minecraft\\Instances',
+      'E:\\CurseForge\\Minecraft\\Instances',
+      'F:\\CurseForge\\Minecraft\\Instances',
+    ];
+
+    final modrinthPaths = [
+      p.join(appData, 'ModrinthApp', 'profiles'), // Roaming (Default)
+      p.join(localAppData, 'ModrinthApp', 'profiles'), // Local (Alternative)
+      p.join(appData, 'com.modrinth.launcher', 'meta', 'instances'), // Legacy/Other
+      p.join(userProfile, 'AppData', 'Roaming', 'ModrinthApp', 'profiles'), // Explicit Roaming
+    ];
+
+    final skLauncherPaths = [
+      p.join(appData, '.minecraft', 'modpacks'), // Standard SK
+      p.join(appData, '.sklauncher', 'instances'), // Alt SK
+      p.join(appData, '.minecraft', 'instances'), // Vanilla/SK shared
+      p.join(localAppData, '.minecraft', 'modpacks'), // Local alternative
+    ];
+
     final paths = {
-      'curseforge': cfPath,
-      'modrinth': p.join(appData, 'ModrinthApp', 'profiles'),
-      'modrinth_alt': p.join(appData, 'com.modrinth.launcher', 'meta', 'instances'),
-      'sklauncher': p.join(appData, '.minecraft', 'modpacks'),
+      'curseforge': findPath(curseForgePaths),
+      'modrinth': findPath(modrinthPaths),
+      // Keep alt keys for backward compatibility if needed, but improved logic above should handle it
+      'modrinth_alt': p.join(appData, 'com.modrinth.launcher', 'meta', 'instances'), 
+      'sklauncher': findPath(skLauncherPaths),
       'sklauncher_alt': p.join(appData, '.sklauncher', 'instances'),
     };
+
+    // Fallback: If findPath returned empty, put a default one back so UI doesn't crash 
+    // or so the user can at least see the option (even if empty)
+    if (paths['curseforge']!.isEmpty) paths['curseforge'] = curseForgePaths[0];
+    if (paths['modrinth']!.isEmpty) paths['modrinth'] = modrinthPaths[0];
+    if (paths['sklauncher']!.isEmpty) paths['sklauncher'] = skLauncherPaths[0];
 
     return paths;
   }

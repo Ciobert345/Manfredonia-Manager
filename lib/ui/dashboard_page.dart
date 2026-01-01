@@ -23,7 +23,7 @@ class DashboardPage extends StatefulWidget {
   State<DashboardPage> createState() => _DashboardPageState();
 }
 
-class _DashboardPageState extends State<DashboardPage> with WidgetsBindingObserver {
+class _DashboardPageState extends State<DashboardPage> with WidgetsBindingObserver, WindowListener {
   final LauncherService _launcherService = LauncherService();
   final GithubService _githubService = GithubService();
   final UpdateService _updateService = UpdateService();
@@ -57,12 +57,26 @@ class _DashboardPageState extends State<DashboardPage> with WidgetsBindingObserv
   List<String> _preservedMods = [];
   List<String> _localMods = [];
 
+  // Taskbar progress throttling
+  DateTime _lastTaskbarUpdate = DateTime.fromMillisecondsSinceEpoch(0);
+
+
+  void _updateTaskbarProgress(double value) {
+    final now = DateTime.now();
+    // Update at most every 200ms or if value is 0.0/1.0 (start/finish)
+    if (value <= 0.0 || value >= 1.0 || now.difference(_lastTaskbarUpdate).inMilliseconds > 200) {
+      windowManager.setProgressBar(value.clamp(0.0, 1.0));
+      _lastTaskbarUpdate = now;
+    }
+  }
 
   @override
   void initState() {
     super.initState();
     _launchers = _launcherService.getLauncherPaths();
     WidgetsBinding.instance.addObserver(this);
+    windowManager.addListener(this);
+    windowManager.setPreventClose(true);
     
     // Simply load the last session on startup
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -74,7 +88,22 @@ class _DashboardPageState extends State<DashboardPage> with WidgetsBindingObserv
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    windowManager.removeListener(this);
     super.dispose();
+  }
+
+  @override
+  Future<void> onWindowClose() async {
+    if (_isUpdating) {
+      if (!mounted) return;
+      _showNotification(
+        "Operazione in corso! Attendi il completamento prima di chiudere.",
+        NotificationType.warning,
+      );
+      return;
+    }
+    
+    exit(0);
   }
 
   @override
@@ -367,6 +396,38 @@ class _DashboardPageState extends State<DashboardPage> with WidgetsBindingObserv
     }
   }
 
+  Future<void> _openInstanceFolder() async {
+    if (_selectedLauncher == null || _selectedInstance == null || _selectedInstance == "__NEW_INSTALL__") return;
+
+    try {
+      String? instancePath;
+      if (SettingsService().customPaths.any((p) => p.endsWith(_selectedInstance!))) {
+        instancePath = SettingsService().customPaths.firstWhere((p) => p.endsWith(_selectedInstance!));
+      } else {
+        final root = _launchers[_selectedLauncher!] ?? _launchers.values.first;
+        instancePath = p.join(root, _selectedInstance);
+      }
+
+      if (await Directory(instancePath).exists()) {
+        if (Platform.isWindows) {
+          await Process.run('explorer', [instancePath]);
+        } else if (Platform.isMacOS) {
+          await Process.run('open', [instancePath]);
+        } else if (Platform.isLinux) {
+          await Process.run('xdg-open', [instancePath]);
+        }
+      } else {
+        if (mounted) {
+           ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Instance folder not found!')),
+          );
+        }
+      }
+    } catch (e) {
+      print("Error opening folder: $e");
+    }
+  }
+
   Future<void> _addCustomPath() async {
     try {
       final String? selectedDirectory = await FilePicker.platform.getDirectoryPath(
@@ -442,6 +503,28 @@ class _DashboardPageState extends State<DashboardPage> with WidgetsBindingObserv
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Errore selezione cartella: $e')),
+        );
+      }
+    }
+  }
+
+  void _removeCustomInstance(String instanceName) {
+    final pathToRemove = SettingsService().customPaths.firstWhere(
+      (path) => p.basename(path) == instanceName,
+      orElse: () => "",
+    );
+    
+    if (pathToRemove.isNotEmpty) {
+      SettingsService().removeCustomPath(pathToRemove);
+      _refreshInstances();
+      
+      if (_selectedInstance == instanceName) {
+         _onInstanceChanged(null);
+      }
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Istanza personalizzata rimossa: $instanceName')),
         );
       }
     }
@@ -653,6 +736,7 @@ class _DashboardPageState extends State<DashboardPage> with WidgetsBindingObserv
           if (!mounted) return;
           setState(() {
             _progress = p;
+            _updateTaskbarProgress(_progress);
             
             if (status == 'mods') _modsDone = true;
             if (status == 'config') _configDone = true;
@@ -697,6 +781,8 @@ class _DashboardPageState extends State<DashboardPage> with WidgetsBindingObserv
         isRepair ? 'Repair successful!' : 'Update successful!',
         NotificationType.success,
       );
+      
+      _updateTaskbarProgress(0.0);
 
       Future.delayed(const Duration(seconds: 3), () {
         if (mounted) {
@@ -715,6 +801,7 @@ class _DashboardPageState extends State<DashboardPage> with WidgetsBindingObserv
         _isUpdating = false;
         _updateBtnText = isRepair ? "Retry Repair" : "Retry Update";
       });
+      _updateTaskbarProgress(0.0);
       _showNotification(
         'Error: ${e.toString()}',
         NotificationType.error,
@@ -887,6 +974,7 @@ class _DashboardPageState extends State<DashboardPage> with WidgetsBindingObserv
           if (!mounted) return;
           setState(() {
             _progress = progress;
+            _updateTaskbarProgress(_progress);
             
             // Simulating sync steps for UI feedback
             if (progress > 0.3) _modsDone = true;
@@ -907,6 +995,7 @@ class _DashboardPageState extends State<DashboardPage> with WidgetsBindingObserv
         _configDone = true;
         _scriptsDone = true;
       });
+      _updateTaskbarProgress(0.0);
 
       _showNotification("Download completed! Modrinth will now open the file.", NotificationType.success);
 
@@ -947,6 +1036,7 @@ class _DashboardPageState extends State<DashboardPage> with WidgetsBindingObserv
         _statusTitle = "Download Failed";
         _updateBtnText = "Retry";
       });
+      _updateTaskbarProgress(0.0);
       _showNotification("Error downloading modpack: $e", NotificationType.error);
     }
   }
@@ -996,68 +1086,121 @@ class _DashboardPageState extends State<DashboardPage> with WidgetsBindingObserv
               Column(
                 children: [
                   // Header (Drag region)
-                  GestureDetector(
-                    onHorizontalDragStart: (_) => windowManager.startDragging(),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.1),
-                        border: Border(bottom: BorderSide(color: Colors.white.withOpacity(0.05))),
-                      ),
-                      child: Row(
-                        children: [
-                          SizedBox(
-                            height: 52,
-                            width: 52,
-                            child: Image.asset('assets/app_logo_final.png', fit: BoxFit.contain),
+                  Stack(
+                    children: [
+                      // Background & Drag Handler
+                      Positioned.fill(
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.translucent,
+                          onPanStart: (_) => windowManager.startDragging(),
+                          onDoubleTap: () => windowManager.maximize(),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.1),
+                              border: Border(bottom: BorderSide(color: Colors.white.withOpacity(0.05))),
+                            ),
                           ),
-                          const SizedBox(width: 16),
-                          const Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                        ),
+                      ),
+                      // Content
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                        child: Row(
+                          children: [
+                            IgnorePointer(
+                              child: SizedBox(
+                                height: 52,
+                                width: 52,
+                                child: Image.asset('assets/app_logo_final.png', fit: BoxFit.contain),
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: IgnorePointer(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Manfredonia Manager',
+                                      style: TextStyle(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white,
+                                        letterSpacing: -0.5,
+                                      ),
+                                    ),
+                                    Text(
+                                      'MODPACK MANAGER',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFFBFDBFE),
+                                        letterSpacing: 1.2,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            Row(
                               children: [
-                                Text(
-                                  'Manfredonia Manager',
-                                  style: TextStyle(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                    letterSpacing: -0.5,
+                                IgnorePointer(
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.05),
+                                      borderRadius: BorderRadius.circular(20),
+                                      border: Border.all(color: Colors.white.withOpacity(0.1)),
+                                    ),
+                                    child: const Text('v1.1.0', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFBFDBFE))),
                                   ),
                                 ),
-                                Text(
-                                  'MODPACK MANAGER',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                    color: Color(0xFFBFDBFE),
-                                    letterSpacing: 1.2,
+                                const SizedBox(width: 8),
+                                // Minimize Button (Interactive)
+                                Material(
+                                  color: Colors.transparent,
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(4),
+                                    onTap: () => windowManager.minimize(),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: const Icon(Icons.remove, color: Colors.white30, size: 18),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                // Close Button (Interactive)
+                                Material(
+                                  color: Colors.transparent,
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(4),
+                                    onTap: () {
+                                      // Quick close if not updating
+                                      if (!_isUpdating) {
+                                        exit(0);
+                                      } else {
+                                        // Let onWindowClose handle the check
+                                        windowManager.close();
+                                      }
+                                    },
+                                    child: Container(
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: const Icon(Icons.close, color: Colors.white30, size: 18),
+                                    ),
                                   ),
                                 ),
                               ],
                             ),
-                          ),
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.05),
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(color: Colors.white.withOpacity(0.1)),
-                                ),
-                                child: const Text('v1.0.2', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFBFDBFE))),
-                              ),
-                              const SizedBox(width: 8),
-                              IconButton(
-                                onPressed: () => windowManager.close(),
-                                icon: const Icon(Icons.close, color: Colors.white30, size: 20),
-                              ),
-                            ],
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
+                    ],
                   ),
 
                   // Body
@@ -1094,30 +1237,88 @@ class _DashboardPageState extends State<DashboardPage> with WidgetsBindingObserv
                                     hint: _selectedLauncher == null ? 'Waiting for launcher...' : 'Select an instance...',
                                     enabled: _selectedLauncher != null,
                                     items: _instances.map((i) {
-                                      if (i == "__NEW_INSTALL__") {
-                                        return const DropdownMenuItem(
-                                          value: "__NEW_INSTALL__",
-                                          child: Text("+ Install as NEW", style: TextStyle(color: Color(0xFF3b82f6), fontWeight: FontWeight.bold)),
-                                        );
-                                      }
-                                      return DropdownMenuItem(value: i, child: Text(i));
-                                    }).whereType<DropdownMenuItem<String>>().toList(),
+                                  if (i == "__NEW_INSTALL__") {
+                                    return const DropdownMenuItem(
+                                      value: "__NEW_INSTALL__",
+                                      child: Text("+ Install as NEW", style: TextStyle(color: Color(0xFF3b82f6), fontWeight: FontWeight.bold)),
+                                    );
+                                  }
+                                  
+                                  final isCustom = SettingsService().customPaths.any((path) => p.basename(path) == i);
+                                  if (isCustom) {
+                                    return DropdownMenuItem(
+                                      value: i,
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Text(i),
+                                          InkWell(
+                                            onTap: () {
+                                              Navigator.of(context).pop();
+                                              _removeCustomInstance(i);
+                                            },
+                                            borderRadius: BorderRadius.circular(12),
+                                            child: const Padding(
+                                              padding: EdgeInsets.all(8.0),
+                                              child: Icon(Icons.close, color: Colors.redAccent, size: 16),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  }
+                                  
+                                  return DropdownMenuItem(value: i, child: Text(i));
+                                }).whereType<DropdownMenuItem<String>>().toList(),
                                     onChanged: _onInstanceChanged,
                                   ),
                                 ),
                                 const SizedBox(width: 8),
-                                Container(
-                                  height: 48,
-                                  width: 48,
-                                  decoration: BoxDecoration(
+                                if (_selectedInstance != null && _selectedInstance != "__NEW_INSTALL__") ...[
+                                  Material(
                                     color: Colors.white.withOpacity(0.05),
                                     borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: Colors.white.withOpacity(0.1)),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      side: BorderSide(color: Colors.white.withOpacity(0.3), width: 1.0),
+                                    ),
+                                    child: InkWell(
+                                      onTap: _openInstanceFolder,
+                                      borderRadius: BorderRadius.circular(12),
+                                      hoverColor: Colors.white.withOpacity(0.1),
+                                      child: Container(
+                                        height: 48,
+                                        width: 48,
+                                        alignment: Alignment.center,
+                                        child: Tooltip(
+                                          message: 'Open Instance Folder',
+                                          child: const Icon(Icons.folder_open, color: Color(0xFF60a5fa)),
+                                        ),
+                                      ),
+                                    ),
                                   ),
-                                  child: IconButton(
-                                    icon: const Icon(Icons.create_new_folder_outlined, color: Color(0xFF4ade80)),
-                                    tooltip: 'Add Custom Instance',
-                                    onPressed: _addCustomPath,
+                                  const SizedBox(width: 8),
+                                ],
+                                Material(
+                                  color: Colors.white.withOpacity(0.05),
+                                  borderRadius: BorderRadius.circular(12),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    side: BorderSide(color: Colors.white.withOpacity(0.3), width: 1.0),
+                                  ),
+                                  child: InkWell(
+                                    onTap: _addCustomPath,
+                                    borderRadius: BorderRadius.circular(12),
+                                    hoverColor: Colors.white.withOpacity(0.1),
+                                    child: Container(
+                                      height: 48,
+                                      width: 48,
+                                      alignment: Alignment.center,
+                                      child: Tooltip(
+                                        message: 'Add Custom Instance',
+                                        child: const Icon(Icons.create_new_folder_outlined, color: Color(0xFF4ade80)),
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ],
