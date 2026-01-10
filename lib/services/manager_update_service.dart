@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'update_service.dart';
+import 'settings_service.dart';
 
 class ManagerGithubRelease {
   final String tag;
@@ -191,12 +192,26 @@ class ManagerUpdateService {
 
   Future<ManagerGithubRelease?> getLatestRelease() async {
     await _log('getLatestRelease() called.');
+    final settings = SettingsService();
+
+    // 1. Check in-memory cache
     if (_cachedRelease != null && _lastFetch != null) {
       if (DateTime.now().difference(_lastFetch!) < _cacheTtl) {
-        await _log('Returning cached release: tag=${_cachedRelease!.tag}');
+        await _log('Returning in-memory cached release: tag=${_cachedRelease!.tag}');
         return _cachedRelease;
       }
     }
+
+    // 2. Check persistent cache from SettingsService
+    if (settings.managerReleaseCache != null && settings.managerLastFetch != null) {
+      if (DateTime.now().difference(settings.managerLastFetch!) < _cacheTtl) {
+        await _log('Returning persistent cached release: tag=${settings.managerReleaseCache?['tag_name']}');
+        _cachedRelease = ManagerGithubRelease.fromJson(settings.managerReleaseCache!);
+        _lastFetch = settings.managerLastFetch;
+        return _cachedRelease;
+      }
+    }
+
 
     final url = Uri.parse('https://api.github.com/repos/$_owner/$_repo/releases/latest');
 
@@ -217,6 +232,12 @@ class ManagerUpdateService {
         if (parsed is Map<String, dynamic>) {
           _cachedRelease = ManagerGithubRelease.fromJson(parsed);
           _lastFetch = DateTime.now();
+          
+          // Update persistent cache
+          settings.managerReleaseCache = parsed;
+          settings.managerLastFetch = _lastFetch;
+          await settings.saveSettings();
+          
           await _log('Parsed release: tag=${_cachedRelease!.tag} downloadUrlEmpty=${_cachedRelease!.downloadUrl.isEmpty}');
         }
       } else if (response.statusCode == 403) {
@@ -224,15 +245,37 @@ class ManagerUpdateService {
         final tag = await _getLatestTagFromRedirect();
         if (tag != null && tag.isNotEmpty) {
           final installerUrl = await _findInstallerUrlForTag(tag);
-          _cachedRelease = ManagerGithubRelease(
-            tag: tag,
-            body: '',
-            downloadUrl: installerUrl ?? '',
-          );
+          
+          final fallbackData = {
+            'tag_name': tag,
+            'body': '',
+            'assets': [
+              {
+                'name': p.basename(installerUrl ?? _expectedInstallerAssetName),
+                'browser_download_url': installerUrl ?? '',
+              }
+            ]
+          };
+
+          _cachedRelease = ManagerGithubRelease.fromJson(fallbackData);
           _lastFetch = DateTime.now();
-          await _log('Fallback release created: tag=$tag url=${_cachedRelease!.downloadUrl}');
+
+          // Update persistent cache with fallback data
+          settings.managerReleaseCache = fallbackData;
+          settings.managerLastFetch = _lastFetch;
+          await settings.saveSettings();
+
+          await _log('Fallback release created and cached: tag=$tag url=${_cachedRelease!.downloadUrl}');
+        } else {
+          // If fallback fails, try using expired persistent cache as last resort
+          if (settings.managerReleaseCache != null) {
+            await _log('Fallback failed, using expired persistent cache as last resort');
+            _cachedRelease = ManagerGithubRelease.fromJson(settings.managerReleaseCache!);
+            return _cachedRelease;
+          }
         }
-      } else {
+      }
+ else {
         await _log('Non-200 response body (first 400 chars): ${response.body.substring(0, response.body.length < 400 ? response.body.length : 400)}');
       }
 

@@ -67,16 +67,30 @@ class GithubService {
   // Simple in-memory cache
   GithubRelease? _cachedRelease;
   DateTime? _lastFetch;
-  final Duration _cacheTTL = const Duration(minutes: 5);
+  final Duration _cacheTTL = const Duration(minutes: 15); // Increased TTL
+
 
   Future<GithubRelease?> getLatestRelease() async {
-    // Return cached if still valid
+    final settings = SettingsService();
+
+    // 1. Check in-memory cache
     if (_cachedRelease != null && _lastFetch != null) {
       if (DateTime.now().difference(_lastFetch!) < _cacheTTL) {
-        print("[GithubService] Returning cached release info (TTL: ${DateTime.now().difference(_lastFetch!).inSeconds}s)");
+        print("[GithubService] Returning in-memory cached release info (TTL: ${DateTime.now().difference(_lastFetch!).inSeconds}s)");
         return _cachedRelease;
       }
     }
+
+    // 2. Check persistent cache from SettingsService
+    if (settings.githubReleaseCache != null && settings.githubLastFetch != null) {
+      if (DateTime.now().difference(settings.githubLastFetch!) < _cacheTTL) {
+        print("[GithubService] Returning persistent cached release info: ${settings.githubReleaseCache?['tag_name']}");
+        _cachedRelease = GithubRelease.fromJson(settings.githubReleaseCache!);
+        _lastFetch = settings.githubLastFetch;
+        return _cachedRelease;
+      }
+    }
+
 
     final url = Uri.parse('https://api.github.com/repos/$owner/$repo/releases/latest');
     
@@ -96,16 +110,52 @@ class GithubService {
       final response = await http.get(url, headers: headers).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
-        _cachedRelease = GithubRelease.fromJson(json.decode(response.body));
+        final parsed = json.decode(response.body);
+        _cachedRelease = GithubRelease.fromJson(parsed);
         _lastFetch = DateTime.now();
+
+        // Update persistent cache
+        settings.githubReleaseCache = parsed;
+        settings.githubLastFetch = _lastFetch;
+        await settings.saveSettings();
+
         return _cachedRelease;
       } else if (response.statusCode == 403) {
-        print("[GithubService] RATE LIMIT EXCEEDED or Forbidden. Using cache if available.");
-        return _cachedRelease;
+        print("[GithubService] RATE LIMIT EXCEEDED or Forbidden. Trying fallback.");
+        
+        final tag = await _getLatestTagFromRedirect();
+        if (tag != null) {
+          final zipUrl = _buildAssetUrl(tag, '.zip');
+          final manifestUrl = _buildAssetUrl(tag, 'manifest.json');
+          final mrpackUrl = _buildAssetUrl(tag, '.mrpack');
+
+          final fallbackData = {
+            'tag_name': tag,
+            'body': '',
+            'assets': [
+              if (zipUrl != null) {'name': 'modpack.zip', 'browser_download_url': zipUrl},
+              if (manifestUrl != null) {'name': 'manifest.json', 'browser_download_url': manifestUrl},
+              if (mrpackUrl != null) {'name': 'modpack.mrpack', 'browser_download_url': mrpackUrl},
+            ]
+          };
+
+          _cachedRelease = GithubRelease.fromJson(fallbackData);
+          _lastFetch = DateTime.now();
+
+          // Update persistent cache
+          settings.githubReleaseCache = fallbackData;
+          settings.githubLastFetch = _lastFetch;
+          await settings.saveSettings();
+
+          return _cachedRelease;
+        }
+
+        return _cachedRelease; // Return stale cache if fallback fails
       }
       
       print("[GithubService] GitHub API returned status: ${response.statusCode}");
       return _cachedRelease; // Return stale cache if API fails
+
     } catch (e) {
       print('Error checking GitHub: $e');
       return _cachedRelease;
@@ -149,4 +199,42 @@ class GithubService {
     
     return null;
   }
+
+  Future<String?> _getLatestTagFromRedirect() async {
+    final url = Uri.parse('https://github.com/$owner/$repo/releases/latest');
+    try {
+      final client = http.Client();
+      final request = http.Request('GET', url)..followRedirects = false;
+      request.headers['User-Agent'] = 'ManfredoniaManager-Flutter';
+      
+      final response = await client.send(request).timeout(const Duration(seconds: 10));
+      final location = response.headers['location'];
+      if (location == null || location.isEmpty) return null;
+
+      final segments = Uri.parse(location).pathSegments;
+      if (segments.contains('tag')) {
+        return segments[segments.indexOf('tag') + 1];
+      }
+      return segments.isNotEmpty ? segments.last : null;
+    } catch (e) {
+      print("[GithubService] Error in tag redirect fallback: $e");
+      return null;
+    }
+  }
+
+  String? _buildAssetUrl(String tag, String suffix) {
+    // We can't easily "search" assets without API, so we guess common names or constructs
+    // However, GitHub direct download URLs follow a pattern:
+    // https://github.com/owner/repo/releases/download/tag/filename
+    
+    // For Manfredonia, the .zip is usually named with version or just "Manfredonia-Pack.zip"
+    // Since we don't know the exact name, this is a bit of a gamble without the API.
+    // But we know the repo structure sometimes.
+    
+    // As a better fallback, we can point to the tag's release page download
+    return 'https://github.com/$owner/$repo/releases/download/$tag/modpack$suffix';
+    // Note: This relies on the file being named consistently. 
+    // If it's not, the download will fail later but at least the UI won't be stuck.
+  }
 }
+

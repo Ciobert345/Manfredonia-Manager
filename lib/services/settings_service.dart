@@ -12,6 +12,13 @@ class SettingsService {
   String? lastInstance;
   List<String> customPaths = [];
 
+  // Persistent Cache
+  Map<String, dynamic>? githubReleaseCache;
+  DateTime? githubLastFetch;
+  Map<String, dynamic>? managerReleaseCache;
+  DateTime? managerLastFetch;
+
+
   Future<void> init() async {
     await loadSettings();
   }
@@ -32,6 +39,21 @@ class SettingsService {
         if (data['customPaths'] != null) {
           customPaths = List<String>.from(data['customPaths']);
         }
+        
+        // Load cache
+        if (data['githubReleaseCache'] != null) {
+          githubReleaseCache = Map<String, dynamic>.from(data['githubReleaseCache']);
+        }
+        if (data['githubLastFetch'] != null) {
+          githubLastFetch = DateTime.parse(data['githubLastFetch']);
+        }
+        if (data['managerReleaseCache'] != null) {
+          managerReleaseCache = Map<String, dynamic>.from(data['managerReleaseCache']);
+        }
+        if (data['managerLastFetch'] != null) {
+          managerLastFetch = DateTime.parse(data['managerLastFetch']);
+        }
+
       }
     } catch (e) {
       print("[Settings] Error loading settings: $e");
@@ -45,6 +67,11 @@ class SettingsService {
         'lastLauncher': lastLauncher,
         'lastInstance': lastInstance,
         'customPaths': customPaths,
+        'githubReleaseCache': githubReleaseCache,
+        'githubLastFetch': githubLastFetch?.toIso8601String(),
+        'managerReleaseCache': managerReleaseCache,
+        'managerLastFetch': managerLastFetch?.toIso8601String(),
+
       };
       await file.writeAsString(json.encode(data));
     } catch (e) {

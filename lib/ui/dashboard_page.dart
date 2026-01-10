@@ -60,6 +60,11 @@ class _DashboardPageState extends State<DashboardPage> with WidgetsBindingObserv
   // Taskbar progress throttling
   DateTime _lastTaskbarUpdate = DateTime.fromMillisecondsSinceEpoch(0);
 
+  // Update check throttling
+  DateTime? _lastCheckTime;
+  final Duration _checkCooldown = const Duration(minutes: 30);
+
+
 
   void _updateTaskbarProgress(double value) {
     final now = DateTime.now();
@@ -79,10 +84,12 @@ class _DashboardPageState extends State<DashboardPage> with WidgetsBindingObserv
     windowManager.setPreventClose(true);
     
     // Simply load the last session on startup
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadLastSession();
-      _checkManagerUpdate();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      _lastCheckTime = DateTime.now();
+      await _loadLastSession();
+      await _checkManagerUpdate();
     });
+
   }
 
   @override
@@ -109,11 +116,18 @@ class _DashboardPageState extends State<DashboardPage> with WidgetsBindingObserv
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      print("[Dashboard] Window focused, refreshing instances...");
-      _refreshInstances();
-      _checkManagerUpdate();
+      final now = DateTime.now();
+      if (_lastCheckTime == null || now.difference(_lastCheckTime!) > _checkCooldown) {
+        print("[Dashboard] Window focused, cool-down expired, refreshing...");
+        _refreshInstances();
+        _checkManagerUpdate();
+        _lastCheckTime = now;
+      } else {
+        print("[Dashboard] Window focused, within cool-down (${now.difference(_lastCheckTime!).inMinutes}m since last), skipping refresh.");
+      }
     }
   }
+
 
 
   Future<void> _loadLastSession() async {
@@ -1152,7 +1166,7 @@ class _DashboardPageState extends State<DashboardPage> with WidgetsBindingObserv
                                       borderRadius: BorderRadius.circular(20),
                                       border: Border.all(color: Colors.white.withOpacity(0.1)),
                                     ),
-                                    child: const Text('v1.1.0', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFBFDBFE))),
+                                    child: const Text('v1.1.1', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFBFDBFE))),
                                   ),
                                 ),
                                 const SizedBox(width: 8),
