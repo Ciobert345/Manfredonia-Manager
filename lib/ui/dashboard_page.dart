@@ -1166,7 +1166,7 @@ class _DashboardPageState extends State<DashboardPage> with WidgetsBindingObserv
                                       borderRadius: BorderRadius.circular(20),
                                       border: Border.all(color: Colors.white.withOpacity(0.1)),
                                     ),
-                                    child: const Text('v1.1.1', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFBFDBFE))),
+                                    child: const Text('v1.1.2', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFBFDBFE))),
                                   ),
                                 ),
                                 const SizedBox(width: 8),

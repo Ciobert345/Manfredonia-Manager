@@ -67,7 +67,7 @@ class GithubService {
   // Simple in-memory cache
   GithubRelease? _cachedRelease;
   DateTime? _lastFetch;
-  final Duration _cacheTTL = const Duration(minutes: 15); // Increased TTL
+  final Duration _cacheTTL = const Duration(hours: 1); // Increased TTL to 1 hour
 
 
   Future<GithubRelease?> getLatestRelease() async {
@@ -100,6 +100,10 @@ class GithubService {
         'User-Agent': 'ManfredoniaManager-Flutter',
         'Accept': 'application/vnd.github.v3+json',
       };
+
+      if (settings.githubETag != null) {
+        headers['If-None-Match'] = settings.githubETag!;
+      }
       
       final token = kDebugMode ? _apiToken : "";
       if (token.isNotEmpty) {
@@ -117,8 +121,21 @@ class GithubService {
         // Update persistent cache
         settings.githubReleaseCache = parsed;
         settings.githubLastFetch = _lastFetch;
+        
+        // Update ETag
+        final etag = response.headers['etag'];
+        if (etag != null) {
+          settings.githubETag = etag;
+        }
+
         await settings.saveSettings();
 
+        return _cachedRelease;
+      } else if (response.statusCode == 304) {
+        print("[GithubService] 304 Not Modified. Returning cached release.");
+        _lastFetch = DateTime.now();
+        settings.githubLastFetch = _lastFetch;
+        await settings.saveSettings();
         return _cachedRelease;
       } else if (response.statusCode == 403) {
         print("[GithubService] RATE LIMIT EXCEEDED or Forbidden. Trying fallback.");

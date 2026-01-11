@@ -15,8 +15,10 @@ class SettingsService {
   // Persistent Cache
   Map<String, dynamic>? githubReleaseCache;
   DateTime? githubLastFetch;
+  String? githubETag;
   Map<String, dynamic>? managerReleaseCache;
   DateTime? managerLastFetch;
+  String? managerETag;
 
 
   Future<void> init() async {
@@ -47,11 +49,17 @@ class SettingsService {
         if (data['githubLastFetch'] != null) {
           githubLastFetch = DateTime.parse(data['githubLastFetch']);
         }
+        if (data['githubETag'] != null) {
+          githubETag = data['githubETag'];
+        }
         if (data['managerReleaseCache'] != null) {
           managerReleaseCache = Map<String, dynamic>.from(data['managerReleaseCache']);
         }
         if (data['managerLastFetch'] != null) {
           managerLastFetch = DateTime.parse(data['managerLastFetch']);
+        }
+        if (data['managerETag'] != null) {
+          managerETag = data['managerETag'];
         }
 
       }
@@ -69,8 +77,10 @@ class SettingsService {
         'customPaths': customPaths,
         'githubReleaseCache': githubReleaseCache,
         'githubLastFetch': githubLastFetch?.toIso8601String(),
+        'githubETag': githubETag,
         'managerReleaseCache': managerReleaseCache,
         'managerLastFetch': managerLastFetch?.toIso8601String(),
+        'managerETag': managerETag,
 
       };
       await file.writeAsString(json.encode(data));

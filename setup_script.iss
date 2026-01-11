@@ -1,9 +1,9 @@
 [Setup]
 ; NOTE: The value of AppId uniquely identifies this application. Do not use the same AppId value in installers for other applications.
 ; (To generate a new GUID, click Tools | Generate GUID inside the IDE.)
-AppId={{C7A9E8D1-2B3A-4C5D-6E7F-8G9H0I1J2K3L}
+AppId={C7A9E8D1-2B3A-4C5D-6E7F-8G9H0I1J2K3L}
 AppName=Manfredonia Manager
-AppVersion=1.1.1
+AppVersion=1.1.2
 AppPublisher=Robert Ciobanu
 DefaultDirName={autopf}\Manfredonia Manager
 DisableProgramGroupPage=yes

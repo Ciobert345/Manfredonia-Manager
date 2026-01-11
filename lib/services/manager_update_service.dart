@@ -81,7 +81,7 @@ class ManagerUpdateService {
 
   ManagerGithubRelease? _cachedRelease;
   DateTime? _lastFetch;
-  final Duration _cacheTtl = const Duration(minutes: 5);
+  final Duration _cacheTtl = const Duration(hours: 1); // Increased TTL to 1 hour
 
   Future<String?> _getLatestTagFromRedirect() async {
     final client = http.Client();
@@ -216,13 +216,19 @@ class ManagerUpdateService {
     final url = Uri.parse('https://api.github.com/repos/$_owner/$_repo/releases/latest');
 
     try {
-      await _log('Fetching latest release from $url');
+      final headers = {
+        'User-Agent': 'ManfredoniaManager-Flutter',
+        'Accept': 'application/vnd.github.v3+json',
+      };
+
+      if (settings.managerETag != null) {
+        headers['If-None-Match'] = settings.managerETag!;
+      }
+
+      await _log('Fetching latest release from $url (ETag: ${settings.managerETag})');
       final response = await http.get(
         url,
-        headers: {
-          'User-Agent': 'ManfredoniaManager-Flutter',
-          'Accept': 'application/vnd.github.v3+json',
-        },
+        headers: headers,
       ).timeout(const Duration(seconds: 10));
 
       await _log('GitHub API status=${response.statusCode} length=${response.body.length}');
@@ -236,10 +242,23 @@ class ManagerUpdateService {
           // Update persistent cache
           settings.managerReleaseCache = parsed;
           settings.managerLastFetch = _lastFetch;
+
+          // Update ETag
+          final etag = response.headers['etag'];
+          if (etag != null) {
+            settings.managerETag = etag;
+          }
+
           await settings.saveSettings();
           
           await _log('Parsed release: tag=${_cachedRelease!.tag} downloadUrlEmpty=${_cachedRelease!.downloadUrl.isEmpty}');
         }
+      } else if (response.statusCode == 304) {
+        await _log('304 Not Modified. Returning cached release.');
+        _lastFetch = DateTime.now();
+        settings.managerLastFetch = _lastFetch;
+        await settings.saveSettings();
+        return _cachedRelease;
       } else if (response.statusCode == 403) {
         await _log('GitHub API rate limited, trying redirect fallback');
         final tag = await _getLatestTagFromRedirect();
